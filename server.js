@@ -8,26 +8,52 @@ const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
 
-// Security: Allow specific origin with credentials (Cookies)
+// --- CONFIGURATION ---
+// In Vercel, we want to allow the frontend (same domain) to access the API
+const allowedOrigins = [
+    'http://localhost:5173', 
+    'http://localhost:3000',
+    process.env.CLIENT_URL // For production URL
+];
+
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173', 
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        // In production Vercel monorepo, origin might be same domain, 
+        // but explicit check is good for security if separated.
+        // For Vercel "Same Deployment", CORS is less of an issue, 
+        // but we keep it for good measure.
+        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'production') {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
-// MongoDB Connection
-const MONGO_URI = process.env.MONGO_URI;
-
-if (!MONGO_URI) {
-    console.error("FATAL ERROR: MONGO_URI is not defined in .env");
-    process.exit(1);
-}
-
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('MongoDB Connected Successfully'))
-  .catch(err => console.error('MongoDB Connection Error:', err));
+// MongoDB Connection (Cached for Serverless)
+let isConnected = false;
+const connectDB = async () => {
+    if (isConnected) return;
+    try {
+        const MONGO_URI = process.env.MONGO_URI;
+        if (!MONGO_URI) throw new Error("MONGO_URI missing");
+        
+        await mongoose.connect(MONGO_URI);
+        isConnected = true;
+        console.log('MongoDB Connected');
+    } catch (err) {
+        console.error('MongoDB Connection Error:', err);
+    }
+};
+// Trigger connection
+connectDB();
 
 // --- SCHEMAS ---
 
@@ -60,46 +86,37 @@ const ActivationCodeSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-const QuizCache = mongoose.model('QuizCache', QuizCacheSchema);
-const ActivationCode = mongoose.model('ActivationCode', ActivationCodeSchema);
-const AppConfig = mongoose.model('AppConfig', AppConfigSchema);
+const QuizCache = mongoose.models.QuizCache || mongoose.model('QuizCache', QuizCacheSchema);
+const ActivationCode = mongoose.models.ActivationCode || mongoose.model('ActivationCode', ActivationCodeSchema);
+const AppConfig = mongoose.models.AppConfig || mongoose.model('AppConfig', AppConfigSchema);
 
 // --- API KEY ROTATION ---
 
 const getGeminiKeys = () => {
     const keys = [];
-    // Prioritize specific rotation keys
     if (process.env.GEMINI_KEY_1) keys.push(process.env.GEMINI_KEY_1);
     if (process.env.GEMINI_KEY_2) keys.push(process.env.GEMINI_KEY_2);
     if (process.env.GEMINI_KEY_3) keys.push(process.env.GEMINI_KEY_3);
-    
-    // Fallback to generic API_KEYs
     if (process.env.API_KEY) keys.push(process.env.API_KEY);
-    Object.keys(process.env).forEach(key => {
-        if (key.startsWith('API_KEY_') && process.env[key]) {
-            keys.push(process.env[key]);
-        }
-    });
-    return [...new Set(keys)]; // Unique keys only
+    return [...new Set(keys)];
 };
 
 const apiKeys = getGeminiKeys();
-console.log(`Loaded ${apiKeys.length} API Keys for rotation.`);
 
 const getRandomKey = () => {
-    if (apiKeys.length === 0) throw new Error("No Gemini API Keys configured on server.");
+    // Fallback if no specific keys set
+    if (apiKeys.length === 0 && process.env.API_KEY) return process.env.API_KEY;
+    if (apiKeys.length === 0) throw new Error("No Gemini API Keys configured.");
     return apiKeys[Math.floor(Math.random() * apiKeys.length)];
 };
 
-// Retry logic for 429/Quota errors
 const executeWithRetry = async (operation, attempt = 1) => {
-    const maxRetries = apiKeys.length * 2;
+    const maxRetries = 2; // Reduced for serverless timeout safety
     try {
         return await operation();
     } catch (error) {
-        const isRateLimit = error.message?.includes('429') || error.status === 429 || error.message?.includes('Quota');
+        const isRateLimit = error.message?.includes('429') || error.status === 429;
         if (isRateLimit && attempt <= maxRetries) {
-            console.warn(`⚠️ Rate Limit (429) on Key. Rotating... (Attempt ${attempt})`);
             return executeWithRetry(operation, attempt + 1);
         }
         throw error;
@@ -108,20 +125,16 @@ const executeWithRetry = async (operation, attempt = 1) => {
 
 // --- MIDDLEWARE ---
 
-// Check Plan Limits & Reset Daily Usage
 const checkPlanLimits = async (req, res, next) => {
-    // 1. Identify User (Cookie preferred, body fallback)
+    await connectDB();
     const code = req.cookies.session_code || req.body.activationCode;
     
-    if (!code) {
-        return res.status(401).json({ error: "Session expired. Please login again." });
-    }
+    if (!code) return res.status(401).json({ error: "Session expired." });
 
     try {
         const user = await ActivationCode.findOne({ code });
-        if (!user) return res.status(403).json({ error: "Invalid Session Code" });
+        if (!user) return res.status(403).json({ error: "Invalid Session" });
 
-        // 2. Reset Daily Usage if new day
         const today = new Date().setHours(0,0,0,0);
         const lastUsed = new Date(user.lastUsageDate).setHours(0,0,0,0);
         
@@ -131,24 +144,17 @@ const checkPlanLimits = async (req, res, next) => {
             await user.save();
         }
 
-        // 3. Fetch Limits from Database
         let config = await AppConfig.findOne();
-        if (!config) {
-            // Create default config if none exists
-            config = await AppConfig.create({}); 
-        }
-
+        if (!config) config = await AppConfig.create({}); 
+        
         const limits = config.planLimits || { Free: 3, Pro: 20, Gold: 100, Unlimited: 99999 };
         const limit = limits[user.planType] || 3;
 
-        // 4. Check Limit
         if (user.dailyUsage >= limit) {
-            return res.status(403).json({ 
-                error: `Daily Limit Reached! Your ${user.planType} plan allows ${limit} quizzes per day. Please upgrade.` 
-            });
+            return res.status(403).json({ error: "Daily Limit Reached." });
         }
 
-        req.user = user; // Attach user to request
+        req.user = user;
         next();
 
     } catch (err) {
@@ -156,22 +162,24 @@ const checkPlanLimits = async (req, res, next) => {
     }
 };
 
-// Admin Authentication Middleware
-const requireAdmin = (req, res, next) => {
+const requireAdmin = async (req, res, next) => {
+    await connectDB();
     const adminToken = req.cookies.admin_session;
-    // In a real app, verify this is a real signed token.
-    // Here we use a simple presence check set by the login route.
     if (adminToken === 'authenticated') {
         next();
     } else {
-        res.status(401).json({ error: "Unauthorized: Admin Access Required" });
+        res.status(401).json({ error: "Unauthorized" });
     }
 };
 
 // --- ROUTES ---
 
-// 1. Activate & Set Cookie
+app.get('/api/health', (req, res) => {
+    res.json({ status: "Online", db: isConnected ? "Connected" : "Disconnected" });
+});
+
 app.post('/api/activate', async (req, res) => {
+    await connectDB();
     try {
         const { code, deviceId } = req.body;
         if (!code) return res.status(400).json({ error: 'Code required' });
@@ -179,34 +187,30 @@ app.post('/api/activate', async (req, res) => {
         const user = await ActivationCode.findOne({ code });
         if (!user) return res.status(401).json({ valid: false, message: 'Invalid Code' });
         
-        // Strict Reuse Policy (Optional: Can be relaxed if deviceId matches)
         if (user.isUsed && user.usedByDeviceId && user.usedByDeviceId !== deviceId) {
-             return res.status(403).json({ valid: false, message: 'This code is already in use on another device.' });
+             return res.status(403).json({ valid: false, message: 'Code in use elsewhere.' });
         }
 
-        // Mark Used
         user.isUsed = true;
         user.usedByDeviceId = deviceId || 'unknown';
         user.lastUsageDate = new Date();
         await user.save();
 
-        // Set HTTP-Only Cookie (Secure session)
         res.cookie('session_code', code, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 365 * 24 * 60 * 60 * 1000 // 1 Year
+            secure: true, // Always true for Vercel
+            sameSite: 'none', // Required for cross-site cookie if separate domains
+            maxAge: 365 * 24 * 60 * 60 * 1000 
         });
 
         res.json({ valid: true, plan: user.planType });
-
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// 2. Secure Generation Proxy
 app.post('/api/generate', checkPlanLimits, async (req, res) => {
+    await connectDB();
     try {
         const { model, contents, config } = req.body;
         
@@ -223,12 +227,10 @@ app.post('/api/generate', checkPlanLimits, async (req, res) => {
             return response.text;
         });
 
-        // Increment Usage
         req.user.dailyUsage += 1;
         req.user.lastUsageDate = new Date();
         await req.user.save();
         
-        // Get current limit for response info
         const appConfig = await AppConfig.findOne();
         const limits = appConfig ? appConfig.planLimits : { Free: 3, Pro: 20, Gold: 100, Unlimited: 99999 };
         const currentLimit = limits[req.user.planType];
@@ -241,8 +243,8 @@ app.post('/api/generate', checkPlanLimits, async (req, res) => {
     }
 });
 
-// 3. Cache Check (Public)
 app.post('/api/quiz/check', async (req, res) => {
+  await connectDB();
   try {
     const { hash } = req.body;
     const cachedEntry = await QuizCache.findOne({ hash });
@@ -253,8 +255,8 @@ app.post('/api/quiz/check', async (req, res) => {
   }
 });
 
-// 4. Cache Save (Protected by Plan Limit Middleware? Optional. Leaving public for now for simplicity)
 app.post('/api/quiz/save', async (req, res) => {
+  await connectDB();
   try {
     const { hash, quiz, title } = req.body;
     await QuizCache.findOneAndUpdate(
@@ -268,25 +270,19 @@ app.post('/api/quiz/save', async (req, res) => {
   }
 });
 
-// --- ADMIN ROUTES ---
-
-// Admin Login Route (New Secure Route)
-app.post('/api/admin/login', (req, res) => {
+// Admin Login
+app.post('/api/admin/login', async (req, res) => {
     const { password } = req.body;
     const adminPassword = process.env.ADMIN_PASSWORD;
 
-    if (!adminPassword) {
-        console.error("ADMIN_PASSWORD not set in .env");
-        return res.status(500).json({ error: "Server Configuration Error" });
-    }
+    if (!adminPassword) return res.status(500).json({ error: "Config Error" });
 
     if (password === adminPassword) {
-        // Set HTTP-Only Cookie for Admin
         res.cookie('admin_session', 'authenticated', {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 24 * 60 * 60 * 1000 // 1 Day
+            secure: true,
+            sameSite: 'none',
+            maxAge: 24 * 60 * 60 * 1000
         });
         return res.json({ success: true });
     } else {
@@ -294,98 +290,88 @@ app.post('/api/admin/login', (req, res) => {
     }
 });
 
-// Apply Middleware to all subsequent admin routes
 app.use('/api/admin/*', requireAdmin);
 
 app.get('/api/admin/quizzes', async (req, res) => {
+  await connectDB();
   try {
     const quizzes = await QuizCache.find({}, 'hash title createdAt quiz').sort({ createdAt: -1 }).limit(50);
     const result = quizzes.map(q => ({
       _id: q._id, title: q.title, date: q.createdAt, questionCount: Array.isArray(q.quiz) ? q.quiz.length : 0
     }));
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/admin/quiz/:id', async (req, res) => {
+  await connectDB();
   try {
     await QuizCache.findByIdAndDelete(req.params.id);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Admin: Codes Management
 app.get('/api/admin/codes', async (req, res) => {
+    await connectDB();
     try {
         const codes = await ActivationCode.find().sort({ createdAt: -1 });
         res.json(codes);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/admin/codes/generate', async (req, res) => {
+    await connectDB();
     try {
         const { count, planType } = req.body;
         const limit = count || 1;
         const plan = planType || 'Free';
         const newCodes = [];
-        
         for(let i=0; i<limit; i++) {
             const code = Math.random().toString(36).substring(2, 8).toUpperCase();
             newCodes.push({ code, planType: plan });
         }
-        
         await ActivationCode.insertMany(newCodes);
         res.json({ success: true, count: limit });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/admin/code/:id', async (req, res) => {
+    await connectDB();
     try {
         await ActivationCode.findByIdAndDelete(req.params.id);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Admin: Config Management
 app.get('/api/admin/config', async (req, res) => {
+    await connectDB();
     try {
         let config = await AppConfig.findOne();
         if (!config) config = await AppConfig.create({});
         res.json(config);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/admin/config', async (req, res) => {
+    await connectDB();
     try {
         const { planLimits } = req.body;
         let config = await AppConfig.findOne();
         if (!config) config = new AppConfig();
-        
-        if (planLimits) {
-            config.planLimits = { ...config.planLimits, ...planLimits };
-        }
+        if (planLimits) config.planLimits = { ...config.planLimits, ...planLimits };
         config.updatedAt = new Date();
         await config.save();
         res.json({ success: true, config });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-const PORT = 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Rotation Active: ${apiKeys.length} Keys loaded.`);
-});
+// Export the app for Vercel
+module.exports = app;
+
+// Only listen if running directly (Local Development)
+if (require.main === module) {
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+        console.log(`Server running locally on http://localhost:${PORT}`);
+    });
+}

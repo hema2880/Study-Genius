@@ -1,8 +1,21 @@
 import { Question, QuestionType, QuizSettings, FileData, Difficulty, ChatMessage, CalendarEvent, GradingResult, InputMode, AIProvider } from "../types";
 import { HarmCategory, HarmBlockThreshold, Type } from "@google/genai"; // Only importing Types now, not functionality
 
-// Use VITE_SERVER_URL if available (for production build), otherwise localhost
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+// Automatic Server URL detection
+// 1. If VITE_SERVER_URL is set in .env, use it.
+// 2. If running in production (on Vercel), use relative path (proxy to same domain)
+// 3. Fallback to localhost:5000 for local dev
+const getBaseUrl = () => {
+    if ((import.meta as any).env?.VITE_SERVER_URL) {
+        return (import.meta as any).env.VITE_SERVER_URL;
+    }
+    if ((import.meta as any).env?.PROD) {
+        return ''; // In production (Vercel), frontend and backend share the domain
+    }
+    return 'http://localhost:5000';
+};
+
+const SERVER_URL = getBaseUrl();
 let isServerOnline = true; 
 
 // --- Auth / Activation Utilities ---
