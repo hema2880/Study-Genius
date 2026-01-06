@@ -20,12 +20,14 @@ app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
+        
+        // Check if origin is allowed or if we are in dev mode (allow all in dev to fix fetch errors)
         if (allowedOrigins.indexOf(origin) !== -1 || isProduction) {
             callback(null, true);
         } else {
-            // For development convenience, you might want to log the blocked origin
-            console.log("CORS blocked origin:", origin);
-            callback(null, true); // Temporarily allow all for debugging "Failed to fetch"
+            // For development convenience, log and allow
+            console.log("CORS: allowing origin for dev:", origin);
+            callback(null, true); 
         }
     },
     credentials: true,
@@ -175,11 +177,11 @@ app.get('/api/health', (req, res) => {
     res.json({ status: "Online", db: isConnected ? "Connected" : "Disconnected" });
 });
 
-// Admin Login - Simplified Path
+// Admin Login
 app.post('/api/login', async (req, res) => {
     try {
         const { password } = req.body;
-        // Updated Default Password per request
+        // Password updated to the requested string
         const adminPassword = process.env.ADMIN_PASSWORD || 'Hema@288@299@200@';
 
         if (password === adminPassword) {

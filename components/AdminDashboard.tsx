@@ -135,7 +135,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
               Back to App
             </button>
           </form>
-          <p className="mt-4 text-center text-xs text-slate-400">Default Password: <b>Hema@288@299@200@</b></p>
         </div>
       </div>
     );
