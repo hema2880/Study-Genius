@@ -10,7 +10,7 @@ import {
     InputMode, 
     AIProvider 
 } from "../types";
-import { HarmCategory, HarmBlockThreshold, Type } from "@google/generative-ai";
+import { HarmCategory, HarmBlockThreshold, SchemaType} from "@google/generative-ai";
 
 // --- 1. Configuration & Server URL ---
 
