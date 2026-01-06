@@ -1,3 +1,4 @@
+
 import { Question, QuestionType, QuizSettings, FileData, Difficulty, ChatMessage, CalendarEvent, GradingResult, InputMode, AIProvider } from "../types";
 import { HarmCategory, HarmBlockThreshold, Type } from "@google/genai"; // Only importing Types now, not functionality
 
@@ -157,7 +158,7 @@ const saveCache = async (hash: string, quiz: Question[], title: string) => {
 
 // --- Admin API ---
 
-export const loginAdmin = async (password: string): Promise<boolean> => {
+export const loginAdmin = async (password: string): Promise<{ success: boolean; error?: string }> => {
     try {
         const res = await fetch(`${SERVER_URL}/api/admin/login`, {
             method: 'POST',
@@ -166,12 +167,13 @@ export const loginAdmin = async (password: string): Promise<boolean> => {
             credentials: 'include' // Important for secure cookie
         });
         if (res.ok) {
-            return true;
+            return { success: true };
         }
-        return false;
-    } catch (e) {
+        const data = await res.json().catch(() => ({}));
+        return { success: false, error: data.error || "Login Failed" };
+    } catch (e: any) {
         console.error("Admin Login Failed", e);
-        return false;
+        return { success: false, error: e.message || "Connection Failed" };
     }
 };
 
@@ -307,11 +309,6 @@ const generateWithGeminiProxy = async (content: string | FileData[], settings: Q
     // CALL PROXY INSTEAD OF LOCAL SDK
     return await generateViaProxy(selectedModel, { parts }, generationConfig);
 };
-
-// --- Note: Custom/Groq removed/simplified for this update as user asked for backend upgrade specifically for Gemini keys ---
-// For a production app, we would route Custom/Groq through the proxy too, but maintaining existing logic for them if they use client-side keys is acceptable, 
-// though the requirement implies we want to hide keys. 
-// For this implementation, I will route GEMINI through the server. 
 
 export const generateQuizContent = async (
   inputMode: string,

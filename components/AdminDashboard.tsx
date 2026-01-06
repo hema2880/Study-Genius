@@ -34,16 +34,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
     setError('');
     
     // Secure Login Call to Backend
-    const success = await loginAdmin(password);
+    const result = await loginAdmin(password);
     
-    if (success) {
+    if (result.success) {
       setIsAuthenticated(true);
       // Fetch initial data after auth
       await fetchCodes();
       await fetchQuizzes();
       await fetchConfig();
     } else {
-      setError('Incorrect password or server error');
+      setError(result.error || 'Incorrect password or server error');
     }
     setLoading(false);
   };
@@ -135,6 +135,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
               Back to App
             </button>
           </form>
+          <p className="mt-4 text-center text-xs text-slate-400">Default Password: <b>admin</b></p>
         </div>
       </div>
     );
