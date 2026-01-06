@@ -23,11 +23,14 @@ app.use(cors({
         if (allowedOrigins.indexOf(origin) !== -1 || isProduction) {
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            // For development convenience, you might want to log the blocked origin
+            console.log("CORS blocked origin:", origin);
+            callback(null, true); // Temporarily allow all for debugging "Failed to fetch"
         }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Handle preflight requests globally
@@ -176,7 +179,8 @@ app.get('/api/health', (req, res) => {
 app.post('/api/login', async (req, res) => {
     try {
         const { password } = req.body;
-        const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
+        // Updated Default Password per request
+        const adminPassword = process.env.ADMIN_PASSWORD || 'Hema@288@299@200@';
 
         if (password === adminPassword) {
             res.cookie('admin_session', 'authenticated', {
