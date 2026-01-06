@@ -43,7 +43,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
       await fetchQuizzes();
       await fetchConfig();
     } else {
-      setError(result.error || 'Incorrect password or server error');
+        if (result.error && result.error.includes('Failed to fetch')) {
+            setError('Backend server offline. Run "node server.js"');
+        } else {
+            setError(result.error || 'Incorrect password or server error');
+        }
     }
     setLoading(false);
   };
@@ -117,7 +121,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
                 placeholder="Enter Password"
                 className="w-full p-4 rounded-xl border-2 border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 focus:border-primary-500 focus:outline-none transition-colors"
               />
-              {error && <p className="text-red-500 text-sm mt-2 text-center">{error}</p>}
+              {error && <p className="text-red-500 text-sm mt-2 text-center font-bold">{error}</p>}
             </div>
             <button
               type="submit"
