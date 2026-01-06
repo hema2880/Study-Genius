@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { App as CapacitorApp } from '@capacitor/app';
 import { Layout } from './components/Layout';
 import { InputSection } from './components/InputSection';
 import { QuizPlayer } from './components/QuizPlayer';
@@ -120,25 +119,6 @@ const App: React.FC = () => {
   useEffect(() => {
     activeViewRef.current = activeView;
   }, [activeView]);
-
-  useEffect(() => {
-    let backButtonListener: any;
-    const setupBackButton = async () => {
-      backButtonListener = await CapacitorApp.addListener('backButton', ({ canGoBack }) => {
-        if (activeViewRef.current === 'home') {
-          CapacitorApp.exitApp();
-        } else {
-          window.history.back();
-        }
-      });
-    };
-    setupBackButton();
-    return () => {
-      if (backButtonListener) {
-        backButtonListener.remove();
-      }
-    };
-  }, []);
 
   const setActiveView = (view: string) => {
     const currentHash = window.location.hash.substring(1);
