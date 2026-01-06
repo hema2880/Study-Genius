@@ -163,7 +163,7 @@ const saveCache = async (hash: string, quiz: Question[], title: string) => {
 
 export const loginAdmin = async (password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-        const res = await fetch(`${SERVER_URL}/api/auth/login`, {
+        const res = await fetch(`${SERVER_URL}/api/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ password }),
@@ -178,10 +178,10 @@ export const loginAdmin = async (password: string): Promise<{ success: boolean; 
         const text = await res.text();
         try {
             const data = JSON.parse(text);
-            return { success: false, error: data.error || "Login Failed" };
+            return { success: false, error: data.error || `Error ${res.status}` };
         } catch (e) {
             // It was not JSON (probably HTML 500 or 404)
-            return { success: false, error: `Server Error ${res.status}: ${text.substring(0, 100)}` };
+            return { success: false, error: `Server Error ${res.status}: ${text.substring(0, 50)}...` };
         }
     } catch (e: any) {
         console.error("Admin Login Failed", e);

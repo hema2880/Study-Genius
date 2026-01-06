@@ -18,6 +18,7 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
         if (allowedOrigins.indexOf(origin) !== -1 || isProduction) {
             callback(null, true);
@@ -25,7 +26,8 @@ app.use(cors({
             callback(new Error('Not allowed by CORS'));
         }
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
 // Handle preflight requests globally
@@ -170,8 +172,8 @@ app.get('/api/health', (req, res) => {
     res.json({ status: "Online", db: isConnected ? "Connected" : "Disconnected" });
 });
 
-// Admin Login - MOVED to /api/auth/login to avoid middleware conflict
-app.post('/api/auth/login', async (req, res) => {
+// Admin Login - Simplified Path
+app.post('/api/login', async (req, res) => {
     try {
         const { password } = req.body;
         const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
