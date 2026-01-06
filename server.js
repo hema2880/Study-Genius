@@ -5,9 +5,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 
-// We will dynamically import GoogleGenAI to avoid ERR_REQUIRE_ESM if the package is ESM-only
-// const { GoogleGenAI } = require("@google/genai"); 
-
 const app = express();
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -30,6 +27,9 @@ app.use(cors({
     },
     credentials: true
 }));
+
+// Handle preflight requests globally
+app.options('*', cors());
 
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
@@ -170,112 +170,16 @@ app.get('/api/health', (req, res) => {
     res.json({ status: "Online", db: isConnected ? "Connected" : "Disconnected" });
 });
 
-app.post('/api/activate', async (req, res) => {
-    await connectDB();
-    try {
-        const { code, deviceId } = req.body;
-        if (!code) return res.status(400).json({ error: 'Code required' });
-
-        const user = await ActivationCode.findOne({ code });
-        if (!user) return res.status(401).json({ valid: false, message: 'Invalid Code' });
-        
-        if (user.isUsed && user.usedByDeviceId && user.usedByDeviceId !== deviceId) {
-             return res.status(403).json({ valid: false, message: 'Code in use elsewhere.' });
-        }
-
-        user.isUsed = true;
-        user.usedByDeviceId = deviceId || 'unknown';
-        user.lastUsageDate = new Date();
-        await user.save();
-
-        res.cookie('session_code', code, {
-            httpOnly: true,
-            secure: isProduction, // False on localhost to ensure cookies work
-            sameSite: 'lax',
-            maxAge: 365 * 24 * 60 * 60 * 1000 
-        });
-
-        res.json({ valid: true, plan: user.planType });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/api/generate', checkPlanLimits, async (req, res) => {
-    await connectDB();
-    try {
-        const { model, contents, config } = req.body;
-        
-        // Dynamically import GoogleGenAI
-        const { GoogleGenAI } = await import("@google/genai");
-        
-        const result = await executeWithRetry(async () => {
-            const currentKey = getRandomKey();
-            const ai = new GoogleGenAI({ apiKey: currentKey });
-            
-            const targetModel = model || 'gemini-2.5-flash';
-            const response = await ai.models.generateContent({
-                model: targetModel,
-                contents: contents,
-                config: config
-            });
-            return response.text;
-        });
-
-        req.user.dailyUsage += 1;
-        req.user.lastUsageDate = new Date();
-        await req.user.save();
-        
-        const appConfig = await AppConfig.findOne();
-        const limits = appConfig ? appConfig.planLimits : { Free: 3, Pro: 20, Gold: 100, Unlimited: 99999 };
-        const currentLimit = limits[req.user.planType];
-
-        res.json({ text: result, remaining: Math.max(0, currentLimit - req.user.dailyUsage) }); 
-
-    } catch (err) {
-        console.error("Generation Error:", err);
-        res.status(500).json({ error: err.message || "Server Error" });
-    }
-});
-
-app.post('/api/quiz/check', async (req, res) => {
-  await connectDB();
-  try {
-    const { hash } = req.body;
-    const cachedEntry = await QuizCache.findOne({ hash });
-    if (cachedEntry) return res.json({ found: true, quiz: cachedEntry.quiz });
-    return res.json({ found: false });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/quiz/save', async (req, res) => {
-  await connectDB();
-  try {
-    const { hash, quiz, title } = req.body;
-    await QuizCache.findOneAndUpdate(
-      { hash },
-      { hash, quiz, title: title || 'Untitled Quiz', createdAt: new Date() },
-      { upsert: true, new: true }
-    );
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Admin Login
-app.post('/api/admin/login', async (req, res) => {
+// Admin Login - MOVED to /api/auth/login to avoid middleware conflict
+app.post('/api/auth/login', async (req, res) => {
     try {
         const { password } = req.body;
-        // DEFAULT PASSWORD FALLBACK IF ENV VAR IS MISSING
         const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
 
         if (password === adminPassword) {
             res.cookie('admin_session', 'authenticated', {
                 httpOnly: true,
-                secure: isProduction, // False on localhost
+                secure: isProduction,
                 sameSite: 'lax', 
                 maxAge: 24 * 60 * 60 * 1000
             });
@@ -289,6 +193,7 @@ app.post('/api/admin/login', async (req, res) => {
     }
 });
 
+// Protected Admin Routes
 app.use('/api/admin/*', requireAdmin);
 
 app.get('/api/admin/quizzes', async (req, res) => {
@@ -362,6 +267,102 @@ app.post('/api/admin/config', async (req, res) => {
         await config.save();
         res.json({ success: true, config });
     } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Other API Routes
+app.post('/api/activate', async (req, res) => {
+    await connectDB();
+    try {
+        const { code, deviceId } = req.body;
+        if (!code) return res.status(400).json({ error: 'Code required' });
+
+        const user = await ActivationCode.findOne({ code });
+        if (!user) return res.status(401).json({ valid: false, message: 'Invalid Code' });
+        
+        if (user.isUsed && user.usedByDeviceId && user.usedByDeviceId !== deviceId) {
+             return res.status(403).json({ valid: false, message: 'Code in use elsewhere.' });
+        }
+
+        user.isUsed = true;
+        user.usedByDeviceId = deviceId || 'unknown';
+        user.lastUsageDate = new Date();
+        await user.save();
+
+        res.cookie('session_code', code, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: 'lax',
+            maxAge: 365 * 24 * 60 * 60 * 1000 
+        });
+
+        res.json({ valid: true, plan: user.planType });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/generate', checkPlanLimits, async (req, res) => {
+    await connectDB();
+    try {
+        const { model, contents, config } = req.body;
+        
+        // Dynamically import GoogleGenAI
+        const { GoogleGenAI } = await import("@google/genai");
+        
+        const result = await executeWithRetry(async () => {
+            const currentKey = getRandomKey();
+            const ai = new GoogleGenAI({ apiKey: currentKey });
+            
+            const targetModel = model || 'gemini-2.5-flash';
+            const response = await ai.models.generateContent({
+                model: targetModel,
+                contents: contents,
+                config: config
+            });
+            return response.text;
+        });
+
+        req.user.dailyUsage += 1;
+        req.user.lastUsageDate = new Date();
+        await req.user.save();
+        
+        const appConfig = await AppConfig.findOne();
+        const limits = appConfig ? appConfig.planLimits : { Free: 3, Pro: 20, Gold: 100, Unlimited: 99999 };
+        const currentLimit = limits[req.user.planType];
+
+        res.json({ text: result, remaining: Math.max(0, currentLimit - req.user.dailyUsage) }); 
+
+    } catch (err) {
+        console.error("Generation Error:", err);
+        res.status(500).json({ error: err.message || "Server Error" });
+    }
+});
+
+app.post('/api/quiz/check', async (req, res) => {
+  await connectDB();
+  try {
+    const { hash } = req.body;
+    const cachedEntry = await QuizCache.findOne({ hash });
+    if (cachedEntry) return res.json({ found: true, quiz: cachedEntry.quiz });
+    return res.json({ found: false });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/quiz/save', async (req, res) => {
+  await connectDB();
+  try {
+    const { hash, quiz, title } = req.body;
+    await QuizCache.findOneAndUpdate(
+      { hash },
+      { hash, quiz, title: title || 'Untitled Quiz', createdAt: new Date() },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = app;

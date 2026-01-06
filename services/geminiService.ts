@@ -163,7 +163,7 @@ const saveCache = async (hash: string, quiz: Question[], title: string) => {
 
 export const loginAdmin = async (password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-        const res = await fetch(`${SERVER_URL}/api/admin/login`, {
+        const res = await fetch(`${SERVER_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ password }),
