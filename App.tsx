@@ -121,6 +121,9 @@ const App: React.FC = () => {
   }, [activeView]);
 
   const setActiveView = (view: string) => {
+    // Prevent overwriting admin view if we are already there
+    if (activeViewRef.current === 'admin' && view !== 'home') return;
+    
     const currentHash = window.location.hash.substring(1);
     if (currentHash !== view) {
       try {
@@ -131,17 +134,40 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const initialView = window.location.hash.substring(1) || 'home';
+    // --- ROUTING LOGIC ---
+    // Priority: 1. URL Path (/admin) -> 2. Hash (#admin) -> 3. Hash (#other) -> 4. Default ('home')
+    const path = window.location.pathname;
+    const hash = window.location.hash.substring(1);
+
+    let initialView = 'home';
+
+    if (path.includes('/admin') || hash === 'admin') {
+        initialView = 'admin';
+    } else if (hash) {
+        initialView = hash;
+    }
+
     _setActiveView(initialView);
+    
+    // Clean up history state to match
     try {
-      window.history.replaceState({ view: initialView }, '', `#${initialView}`);
+        if (initialView === 'admin') {
+            // Optional: Clean URL to just /admin if desired, but keeping it simple
+        } else {
+             window.history.replaceState({ view: initialView }, '', `#${initialView}`);
+        }
     } catch(e) { console.warn("History API failed", e); }
 
     const handlePopState = (event: PopStateEvent) => {
       if (event.state && event.state.view) {
         _setActiveView(event.state.view);
       } else {
-        _setActiveView('home');
+        // Fallback checks on popstate
+        if (window.location.pathname.includes('/admin')) {
+             _setActiveView('admin');
+        } else {
+             _setActiveView(window.location.hash.substring(1) || 'home');
+        }
       }
     };
 
@@ -325,7 +351,11 @@ const App: React.FC = () => {
 
   // Render Admin View directly
   if (activeView === 'admin') {
-      return <AdminDashboard onExit={() => setActiveView('home')} />;
+      return <AdminDashboard onExit={() => {
+        // Clear history and go home
+        window.history.pushState({ view: 'home' }, '', '/#home');
+        _setActiveView('home');
+      }} />;
   }
 
   // --- RENDER BLOCKING ACTIVATION SCREEN ---
