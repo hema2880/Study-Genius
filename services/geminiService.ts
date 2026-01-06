@@ -4,12 +4,19 @@ import { HarmCategory, HarmBlockThreshold, Type } from "@google/genai"; // Only 
 
 // Automatic Server URL detection
 const getBaseUrl = () => {
+    // 1. In Production (Vercel), ALWAYS use relative path.
+    // We check import.meta.env.PROD (Vite standard) or if the hostname isn't localhost.
+    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    
+    if (!isLocal || (import.meta as any).env?.PROD) {
+        return ''; // Returns empty string so requests go to '/api/...' (relative)
+    }
+    
+    // 2. In Local Development, use the variable or default to 5000
     if ((import.meta as any).env?.VITE_SERVER_URL) {
         return (import.meta as any).env.VITE_SERVER_URL;
     }
-    if ((import.meta as any).env?.PROD) {
-        return ''; // In production (Vercel), frontend and backend share the domain
-    }
+    
     return 'http://localhost:5000';
 };
 
@@ -163,6 +170,7 @@ const saveCache = async (hash: string, quiz: Question[], title: string) => {
 
 export const loginAdmin = async (password: string): Promise<{ success: boolean; error?: string }> => {
     try {
+        console.log(`Attempting login to: ${SERVER_URL}/api/login`);
         const res = await fetch(`${SERVER_URL}/api/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

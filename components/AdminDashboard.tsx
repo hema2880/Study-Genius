@@ -43,10 +43,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
       await fetchQuizzes();
       await fetchConfig();
     } else {
-        if (result.error && result.error.includes('Failed to fetch')) {
-            setError('Backend server offline. Run "node server.js"');
+        if (result.error && (result.error.includes('Failed to fetch') || result.error.includes('Server Error'))) {
+            setError('Connection failed. Please ensure the backend is active.');
         } else {
-            setError(result.error || 'Incorrect password or server error');
+            setError(result.error || 'Incorrect password');
         }
     }
     setLoading(false);
@@ -192,7 +192,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
         {connectionError && (
              <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-3xl border border-red-200 dark:border-red-800 flex items-start gap-4">
                  <WifiOff className="text-red-500" size={24} />
-                 <div><h3 className="font-bold text-red-800">Backend Offline</h3><p className="text-sm text-red-600">Ensure server.js is running.</p></div>
+                 <div><h3 className="font-bold text-red-800">Connection Issue</h3><p className="text-sm text-red-600">Could not fetch data from the server.</p></div>
              </div>
         )}
 

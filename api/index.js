@@ -13,7 +13,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 const allowedOrigins = [
     'http://localhost:5173', 
     'http://localhost:3000',
-    'https://study-genius-seven.vercel.app', // Explicitly allow your Vercel domain
+    'https://study-genius-seven.vercel.app', 
     process.env.CLIENT_URL
 ];
 
@@ -48,7 +48,7 @@ const connectDB = async () => {
     try {
         const MONGO_URI = process.env.MONGO_URI;
         if (!MONGO_URI) {
-            console.warn("MONGO_URI missing, skipping DB connection.");
+            console.warn("MONGO_URI missing in Environment.");
             return;
         }
         await mongoose.connect(MONGO_URI);
@@ -58,6 +58,7 @@ const connectDB = async () => {
         console.error('MongoDB Connection Error:', err);
     }
 };
+// Attempt early connection (optimistic)
 connectDB();
 
 // --- SCHEMAS ---
@@ -126,7 +127,9 @@ const executeWithRetry = async (operation, attempt = 1) => {
 
 // --- MIDDLEWARE ---
 const checkPlanLimits = async (req, res, next) => {
+    // Ensure DB is connected for middleware logic
     await connectDB();
+    
     const code = req.cookies.session_code || req.body.activationCode;
     
     if (!code) return res.status(401).json({ error: "Session expired." });
@@ -173,15 +176,21 @@ const requireAdmin = async (req, res, next) => {
 
 // --- ROUTES ---
 
+// Health Check for Vercel
+app.get('/api', (req, res) => {
+    res.json({ status: "API Online", db: isConnected ? "Connected" : "Disconnected" });
+});
+
 app.get('/api/health', (req, res) => {
     res.json({ status: "Online", db: isConnected ? "Connected" : "Disconnected" });
 });
 
 // Admin Login
 app.post('/api/login', async (req, res) => {
+    // We do NOT block on DB connection here to ensure admin access works even if DB is flaky
     try {
         const { password } = req.body;
-        // Updated Default Password per request
+        // Fallback hardcoded password as last resort if Env Var fails
         const adminPassword = process.env.ADMIN_PASSWORD || 'Hema@288@299@200@';
 
         if (password === adminPassword) {
