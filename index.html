@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>StudyGenius - رفيقك الدراسي الذكي</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Cairo', 'sans-serif'],
+            },
+            colors: {
+              primary: {
+                50: '#f0fdfa',
+                100: '#ccfbf1',
+                200: '#99f6e4',
+                300: '#5eead4',
+                400: '#2dd4bf',
+                500: '#14b8a6',
+                600: '#0d9488',
+                700: '#0f766e',
+                800: '#115e59',
+                900: '#134e4a',
+              },
+              secondary: {
+                 50: '#f5f3ff',
+                 100: '#ede9fe',
+                 200: '#ddd6fe',
+                 300: '#c4b5fd',
+                 400: '#a78bfa',
+                 500: '#8b5cf6',
+                 600: '#7c3aed',
+                 700: '#6d28d9',
+                 800: '#5b21b6',
+                 900: '#4c1d95',
+              },
+              accent: {
+                500: '#f43f5e', // Rose
+                400: '#fb7185',
+              }
+            },
+            animation: {
+              'blob': "blob 10s infinite",
+              'float': "float 6s ease-in-out infinite",
+              'float-delayed': "float 6s ease-in-out 3s infinite",
+              'shimmer': "shimmer 2s linear infinite",
+              'fade-in-up': 'fadeInUp 0.6s ease-out forwards',
+              'scale-in': 'scaleIn 0.4s ease-out forwards',
+              'spin-slow': 'spin 12s linear infinite',
+              'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            },
+            keyframes: {
+              blob: {
+                "0%": { transform: "translate(0px, 0px) scale(1)" },
+                "33%": { transform: "translate(30px, -50px) scale(1.1)" },
+                "66%": { transform: "translate(-20px, 20px) scale(0.9)" },
+                "100%": { transform: "translate(0px, 0px) scale(1)" },
+              },
+              float: {
+                "0%, 100%": { transform: "translateY(0)" },
+                "50%": { transform: "translateY(-20px)" },
+              },
+              shimmer: {
+                "0%": { backgroundPosition: "200% 0" },
+                "100%": { backgroundPosition: "-200% 0" }
+              },
+              fadeInUp: {
+                "0%": { opacity: '0', transform: 'translateY(20px)' },
+                "100%": { opacity: '1', transform: 'translateY(0)' },
+              },
+              scaleIn: {
+                "0%": { opacity: '0', transform: 'scale(0.9)' },
+                "100%": { opacity: '1', transform: 'scale(1)' },
+              },
+              pulseGlow: {
+                "0%, 100%": { opacity: '1', boxShadow: "0 0 20px rgba(139, 92, 246, 0.5)" },
+                "50%": { opacity: '.8', boxShadow: "0 0 10px rgba(139, 92, 246, 0.2)" },
+              }
+            },
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        font-family: 'Cairo', sans-serif;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        user-select: none;
+        touch-action: manipulation;
+      }
+      input, textarea, [contenteditable="true"], .study-content, .prose {
+        user-select: text;
+      }
+
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.5); 
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(148, 163, 184, 0.8); 
+      }
+      
+      /* Advanced Glassmorphism */
+      .glass {
+        background: rgba(255, 255, 255, 0.65);
+        backdrop-filter: blur(16px) saturate(180%);
+        -webkit-backdrop-filter: blur(16px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+      }
+      .dark .glass {
+        background: rgba(17, 25, 40, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.75);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+      }
+      .dark .glass-panel {
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+      }
+
+      /* Animated Gradient Text */
+      .text-gradient {
+        background: linear-gradient(to right, #0d9488, #7c3aed, #0d9488);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-size: 200% auto;
+        animation: shimmer 5s linear infinite;
+      }
+      .dark .text-gradient {
+        background: linear-gradient(to right, #5eead4, #c4b5fd, #5eead4);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-size: 200% auto;
+        animation: shimmer 5s linear infinite;
+      }
+
+      .nav-scroll::-webkit-scrollbar { display: none; }
+      .nav-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+      .perspective-1000 { perspective: 1000px; }
+      .transform-style-3d { transform-style: preserve-3d; }
+      .backface-hidden { backface-visibility: hidden; }
+      .rotate-y-180 { transform: rotateY(180deg); }
+      
+      @media print {
+        body * { visibility: hidden; }
+        .print-only, .print-only * { visibility: visible; }
+        .print-only { position: absolute; left: 0; top: 0; width: 100%; }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "uuid": "https://aistudiocdn.com/uuid@^13.0.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "react-markdown": "https://esm.sh/react-markdown@9?bundle",
+    "remark-gfm": "https://esm.sh/remark-gfm@4?bundle",
+    "@capacitor/app": "https://aistudiocdn.com/@capacitor/app@^7.1.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-100 dark:bg-[#0B1120] transition-colors duration-500 min-h-screen overflow-x-hidden relative selection:bg-primary-500 selection:text-white">
+    <!-- Sophisticated Animated Background -->
+    <div class="fixed inset-0 w-full h-full overflow-hidden -z-10">
+       <!-- Gradient Orbs -->
+       <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary-400/30 rounded-full mix-blend-multiply filter blur-[100px] animate-blob dark:bg-primary-900/20 dark:mix-blend-screen"></div>
+       <div class="absolute top-[20%] right-[-10%] w-[40%] h-[40%] bg-secondary-400/30 rounded-full mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000 dark:bg-secondary-900/20 dark:mix-blend-screen"></div>
+       <div class="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] bg-pink-400/30 rounded-full mix-blend-multiply filter blur-[100px] animate-blob animation-delay-4000 dark:bg-purple-900/20 dark:mix-blend-screen"></div>
+       
+       <!-- Noise Texture Overlay for texture -->
+       <div class="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]" style="background-image: url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E');"></div>
+    </div>
+    <div id="root"></div>
+  </body>
+</html>

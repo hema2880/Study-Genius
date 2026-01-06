@@ -1,0 +1,8 @@
+{
+  "name": "StudyGenius",
+  "description": "A comprehensive AI-powered study platform that converts any text, topic, file, or URL into interactive quizzes and flashcards using Google Gemini.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
