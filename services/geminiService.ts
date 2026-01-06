@@ -1,11 +1,8 @@
 
 import { Question, QuestionType, QuizSettings, FileData, Difficulty, ChatMessage, CalendarEvent, GradingResult, InputMode, AIProvider } from "../types";
-import { HarmCategory, HarmBlockThreshold, Type } from "@google/genai"; // Only importing Types now, not functionality
+import { HarmCategory, HarmBlockThreshold, Type } from "@google/genai"; // Only importing Types now
 
 // Automatic Server URL detection
-// 1. If VITE_SERVER_URL is set in .env, use it.
-// 2. If running in production (on Vercel), use relative path (proxy to same domain)
-// 3. Fallback to localhost:5000 for local dev
 const getBaseUrl = () => {
     if ((import.meta as any).env?.VITE_SERVER_URL) {
         return (import.meta as any).env.VITE_SERVER_URL;
@@ -27,7 +24,7 @@ export const checkActivationStatus = async (code: string): Promise<boolean> => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code }),
-            credentials: 'include' // Important for setting HTTP-only cookie
+            credentials: 'include'
         });
         if (res.ok) {
             const data = await res.json();
@@ -36,12 +33,11 @@ export const checkActivationStatus = async (code: string): Promise<boolean> => {
         return false;
     } catch (e) {
         console.error("Activation check failed", e);
-        return false; // Fail secure
+        return false;
     }
 };
 
 const getActivationCode = (): string => {
-    // We try to rely on cookies now, but we pass the code in body as fallback/ID if needed by stateless components
     return localStorage.getItem('activation_code') || '';
 };
 
@@ -57,7 +53,6 @@ const safeGetItem = (key: string): string | null => {
 };
 
 // --- PROXY GENERATION CALL ---
-// This replaces direct GoogleGenAI calls. We send the payload to OUR server.
 
 const generateViaProxy = async (model: string, contents: any, config: any) => {
     const code = getActivationCode();
@@ -67,7 +62,7 @@ const generateViaProxy = async (model: string, contents: any, config: any) => {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include', // Send the session cookie
         body: JSON.stringify({
-            activationCode: code, // Fallback if cookie missing/cleared but localstorage exists
+            activationCode: code, 
             model: model,
             contents: contents,
             config: config
@@ -75,12 +70,20 @@ const generateViaProxy = async (model: string, contents: any, config: any) => {
     });
 
     if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || `Server Error: ${response.status}`);
+        const text = await response.text(); // Get raw response for debugging
+        let errMessage = `Server Error (${response.status})`;
+        try {
+            const json = JSON.parse(text);
+            if (json.error) errMessage = json.error;
+        } catch(e) {
+            // If raw html/text
+            if (text.length < 200) errMessage += `: ${text}`;
+        }
+        throw new Error(errMessage);
     }
 
     const data = await response.json();
-    return data.text; // The server returns { text: "..." }
+    return data.text;
 };
 
 
@@ -166,11 +169,20 @@ export const loginAdmin = async (password: string): Promise<{ success: boolean; 
             body: JSON.stringify({ password }),
             credentials: 'include' // Important for secure cookie
         });
+        
         if (res.ok) {
             return { success: true };
         }
-        const data = await res.json().catch(() => ({}));
-        return { success: false, error: data.error || "Login Failed" };
+        
+        // Handle non-200 responses
+        const text = await res.text();
+        try {
+            const data = JSON.parse(text);
+            return { success: false, error: data.error || "Login Failed" };
+        } catch (e) {
+            // It was not JSON (probably HTML 500 or 404)
+            return { success: false, error: `Server Error ${res.status}: ${text.substring(0, 100)}` };
+        }
     } catch (e: any) {
         console.error("Admin Login Failed", e);
         return { success: false, error: e.message || "Connection Failed" };
@@ -503,9 +515,6 @@ export const generateStudyGuide = async (
 };
 
 export const sendChatMessage = async (history: ChatMessage[], newMessage: string): Promise<string> => {
-  // Convert chat history to 'contents' format for generateContent (stateless/REST approach via proxy)
-  // Or handle stateful chat on server. For simplicity here, we treat it as generation with context.
-  
   const parts = history.map(msg => `[${msg.role}]: ${msg.text}`).join('\n');
   const fullPrompt = `${parts}\n[user]: ${newMessage}\n[model]:`;
   

@@ -4,28 +4,25 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const { GoogleGenAI } = require("@google/genai");
+
+// We will dynamically import GoogleGenAI to avoid ERR_REQUIRE_ESM if the package is ESM-only
+// const { GoogleGenAI } = require("@google/genai"); 
 
 const app = express();
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 // --- CONFIGURATION ---
-// In Vercel, we want to allow the frontend (same domain) to access the API
 const allowedOrigins = [
     'http://localhost:5173', 
     'http://localhost:3000',
-    process.env.CLIENT_URL // For production URL
+    process.env.CLIENT_URL
 ];
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
-        
-        // In production Vercel monorepo, origin might be same domain, 
-        // but explicit check is good for security if separated.
-        // For Vercel "Same Deployment", CORS is less of an issue, 
-        // but we keep it for good measure.
-        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'production') {
+        if (allowedOrigins.indexOf(origin) !== -1 || isProduction) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));
@@ -37,17 +34,16 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
-// MongoDB Connection (Cached for Serverless)
+// MongoDB Connection
 let isConnected = false;
 const connectDB = async () => {
     if (isConnected) return;
     try {
         const MONGO_URI = process.env.MONGO_URI;
         if (!MONGO_URI) {
-            console.warn("MONGO_URI missing, skipping DB connection (Admin Login will still work)");
+            console.warn("MONGO_URI missing, skipping DB connection.");
             return;
         }
-        
         await mongoose.connect(MONGO_URI);
         isConnected = true;
         console.log('MongoDB Connected');
@@ -55,11 +51,9 @@ const connectDB = async () => {
         console.error('MongoDB Connection Error:', err);
     }
 };
-// Trigger connection
 connectDB();
 
 // --- SCHEMAS ---
-
 const QuizCacheSchema = new mongoose.Schema({
   hash: { type: String, required: true, unique: true, index: true },
   title: { type: String, default: 'Untitled Quiz' },
@@ -67,7 +61,6 @@ const QuizCacheSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Global App Configuration (Dynamic Limits)
 const AppConfigSchema = new mongoose.Schema({
   planLimits: {
     Free: { type: Number, default: 3 },
@@ -82,7 +75,7 @@ const ActivationCodeSchema = new mongoose.Schema({
   code: { type: String, required: true, unique: true },
   planType: { type: String, enum: ['Free', 'Pro', 'Gold', 'Unlimited'], default: 'Free' },
   isUsed: { type: Boolean, default: false },
-  usedByDeviceId: { type: String, default: null }, // Optional: fingerprint
+  usedByDeviceId: { type: String, default: null },
   dailyUsage: { type: Number, default: 0 },
   lastUsageDate: { type: Date, default: Date.now },
   generatedBy: { type: String, default: 'Admin' },
@@ -94,7 +87,6 @@ const ActivationCode = mongoose.models.ActivationCode || mongoose.model('Activat
 const AppConfig = mongoose.models.AppConfig || mongoose.model('AppConfig', AppConfigSchema);
 
 // --- API KEY ROTATION ---
-
 const getGeminiKeys = () => {
     const keys = [];
     if (process.env.GEMINI_KEY_1) keys.push(process.env.GEMINI_KEY_1);
@@ -107,14 +99,13 @@ const getGeminiKeys = () => {
 const apiKeys = getGeminiKeys();
 
 const getRandomKey = () => {
-    // Fallback if no specific keys set
     if (apiKeys.length === 0 && process.env.API_KEY) return process.env.API_KEY;
     if (apiKeys.length === 0) throw new Error("No Gemini API Keys configured.");
     return apiKeys[Math.floor(Math.random() * apiKeys.length)];
 };
 
 const executeWithRetry = async (operation, attempt = 1) => {
-    const maxRetries = 2; // Reduced for serverless timeout safety
+    const maxRetries = 2;
     try {
         return await operation();
     } catch (error) {
@@ -127,7 +118,6 @@ const executeWithRetry = async (operation, attempt = 1) => {
 };
 
 // --- MIDDLEWARE ---
-
 const checkPlanLimits = async (req, res, next) => {
     await connectDB();
     const code = req.cookies.session_code || req.body.activationCode;
@@ -166,8 +156,6 @@ const checkPlanLimits = async (req, res, next) => {
 };
 
 const requireAdmin = async (req, res, next) => {
-    // Note: Admin routes don't necessarily need Mongo if they just check the cookie, 
-    // but operations inside might.
     const adminToken = req.cookies.admin_session;
     if (adminToken === 'authenticated') {
         next();
@@ -202,8 +190,8 @@ app.post('/api/activate', async (req, res) => {
 
         res.cookie('session_code', code, {
             httpOnly: true,
-            secure: true, // Always true for Vercel
-            sameSite: 'lax', // Use Lax for better navigation handling
+            secure: isProduction, // False on localhost to ensure cookies work
+            sameSite: 'lax',
             maxAge: 365 * 24 * 60 * 60 * 1000 
         });
 
@@ -217,6 +205,9 @@ app.post('/api/generate', checkPlanLimits, async (req, res) => {
     await connectDB();
     try {
         const { model, contents, config } = req.body;
+        
+        // Dynamically import GoogleGenAI
+        const { GoogleGenAI } = await import("@google/genai");
         
         const result = await executeWithRetry(async () => {
             const currentKey = getRandomKey();
@@ -276,20 +267,25 @@ app.post('/api/quiz/save', async (req, res) => {
 
 // Admin Login
 app.post('/api/admin/login', async (req, res) => {
-    const { password } = req.body;
-    // DEFAULT PASSWORD FALLBACK IF ENV VAR IS MISSING
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
+    try {
+        const { password } = req.body;
+        // DEFAULT PASSWORD FALLBACK IF ENV VAR IS MISSING
+        const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
 
-    if (password === adminPassword) {
-        res.cookie('admin_session', 'authenticated', {
-            httpOnly: true,
-            secure: true,
-            sameSite: 'lax', // Relaxed for top-level navigation, works better on Vercel rewrites
-            maxAge: 24 * 60 * 60 * 1000
-        });
-        return res.json({ success: true });
-    } else {
-        return res.status(401).json({ error: "Invalid Password" });
+        if (password === adminPassword) {
+            res.cookie('admin_session', 'authenticated', {
+                httpOnly: true,
+                secure: isProduction, // False on localhost
+                sameSite: 'lax', 
+                maxAge: 24 * 60 * 60 * 1000
+            });
+            return res.json({ success: true });
+        } else {
+            return res.status(401).json({ error: "Invalid Password" });
+        }
+    } catch (e) {
+        console.error("Login Route Error:", e);
+        return res.status(500).json({ error: "Server Login Error: " + e.message });
     }
 });
 
@@ -368,10 +364,8 @@ app.post('/api/admin/config', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Export the app for Vercel
 module.exports = app;
 
-// Only listen if running directly (Local Development)
 if (require.main === module) {
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
